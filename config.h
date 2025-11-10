@@ -52,6 +52,6 @@ const uint8_t DOOR_SENSOR1_PIN = 14;
 const uint8_t DOOR_SENSOR2_PIN = 15;
 
 // ===== 7. 동작 파라미터 =====
-const unsigned long PUBLISH_INTERVAL_MS = 100; // 0.1초
+const unsigned long PUBLISH_INTERVAL_MS = 1000; // 0.1초
 
 #endif // CONFIG_H
