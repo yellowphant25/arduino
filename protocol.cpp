@@ -1,9 +1,10 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "Protocol.h"
-#include "config.h"
-#include "state.h"
+#include "Protocol.h"  // 자신
+#include "config.h"    // 핀맵
+#include "state.h"     // 전역 변수(current) 사용
 
+// ===== 유틸리티 함수 (응답) =====
 void printError(const char* msg) {
   Serial.print(F("{\"ok\":false,\"error\":\""));
   Serial.print(msg);
@@ -28,6 +29,7 @@ void replyCurrentSetting(const Setting& s) {
   Serial.println();
 }
 
+// ===== 핀모드 설정 (이전과 동일) =====
 void setupCup(uint8_t n) {
   for (uint8_t i=0;i<n;i++){
     pinMode(CUP_MOTOR_OUT[i], OUTPUT);
@@ -75,6 +77,7 @@ void setupCooker(uint8_t n) {
   }
 }
 
+// ===== 설정 적용 및 검증 (이전과 동일) =====
 bool validateRules(const Setting& s, String& why) {
   uint8_t nonzeroCnt = (s.cup?1:0) + (s.ramen?1:0) + (s.powder?1:0) + (s.cooker?1:0) + (s.outlet?1:0);
   if (s.cup     > MAX_CUP)    { why = "cup max=4"; return false; }
@@ -102,7 +105,13 @@ void applySetting(const Setting& s) {
   current = s;
 }
 
-bool handleSettingJson(const JsonDocument& doc) {
+void printMappingSummary(const Setting& s) {
+  // (디버깅용 매핑 요약 함수... 생략)
+}
+
+// ===== 'setting' 명령 핸들러 =====
+// [수정] JsonDocument -> JsonObject
+bool handleSettingJson(JsonObject doc) { 
   Setting next;
   next.cup     = doc["cup"]    | 0;
   next.ramen   = doc["ramen"]  | 0;
@@ -118,34 +127,67 @@ bool handleSettingJson(const JsonDocument& doc) {
 
   applySetting(next);
   printOk("pins configured");
+  // printMappingSummary(next);
   return true;
 }
 
-bool parseAndDispatch(const char* json) {
-  StaticJsonDocument<512> doc;
-  DeserializationError err = deserializeJson(doc, json);
+// ===== [신규] 단일 명령 처리기 =====
+bool processSingleCommand(JsonObject obj) {
+  const char* dev = obj["device"] | "";
   
-  if (err) { 
-    printError("json parse fail"); 
-    return false; 
-  }
-
-  const char* dev = doc["device"] | "";
-
   if (strcmp(dev, "setting") == 0) {
-    return handleSettingJson(doc);
-  } 
-  else if (strcmp(dev, "query") == 0) {
+    return handleSettingJson(obj);
+  } else if (strcmp(dev, "query") == 0) {
     replyCurrentSetting(current);
     return true;
-  }
-  else {
+  } else {
+    // 'setting' / 'query' 외의 명령 (cup, ramen 등)
+    // 요구사항: Echo
     if (strlen(dev) > 0) {
-        Serial.println(json);
+        // 객체를 다시 문자열로 직렬화하여 반송
+        serializeJson(obj, Serial);
+        Serial.println();
         return true;
     } else {
         printError("unsupported device field");
         return false;
     }
+  }
+}
+
+// ===== [수정] 메인 파서 (배열/객체 분기) =====
+bool parseAndDispatch(const char* json) {
+  // JSON 배열 크기에 맞춰 용량 증가
+  StaticJsonDocument<2048> doc; 
+  
+  DeserializationError err = deserializeJson(doc, json);
+  if (err) { 
+    printError("json parse fail"); 
+    return false; 
+  }
+
+  // 1. JSON 배열('[{}, {}]')인가?
+  if (doc.is<JsonArray>()) {
+    JsonArray arr = doc.as<JsonArray>();
+    bool all_success = true;
+    
+    // 배열을 순회하며 모든 명령을 개별적으로 처리
+    for (JsonObject obj : arr) {
+      if (!processSingleCommand(obj)) {
+        all_success = false;
+      }
+    }
+    return all_success;
+    
+  } 
+  // 2. 단일 JSON 객체('{}')인가?
+  else if (doc.is<JsonObject>()) {
+    JsonObject obj = doc.as<JsonObject>();
+    return processSingleCommand(obj);
+  } 
+  // 3. 둘 다 아닌 경우
+  else {
+    printError("root must be object or array");
+    return false;
   }
 }
