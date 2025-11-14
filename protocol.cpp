@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include "Protocol.h"  // 자신
+#include "Protocol.h"  // 자신의 헤더
 #include "config.h"    // 핀맵
-#include "state.h"     // 전역 변수(current) 사용
+#include "state.h"     // 전역 변수(current, state) 사용
 
 // ===== 유틸리티 함수 (응답) =====
 void printError(const char* msg) {
@@ -29,7 +29,7 @@ void replyCurrentSetting(const Setting& s) {
   Serial.println();
 }
 
-// ===== 핀모드 설정 (이전과 동일) =====
+// ===== 핀모드 설정 (Setting 시 호출) =====
 void setupCup(uint8_t n) {
   for (uint8_t i=0;i<n;i++){
     pinMode(CUP_MOTOR_OUT[i], OUTPUT);
@@ -77,7 +77,7 @@ void setupCooker(uint8_t n) {
   }
 }
 
-// ===== 설정 적용 및 검증 (이전과 동일) =====
+// ===== 설정 적용 및 검증 (Setting 시 호출) =====
 bool validateRules(const Setting& s, String& why) {
   uint8_t nonzeroCnt = (s.cup?1:0) + (s.ramen?1:0) + (s.powder?1:0) + (s.cooker?1:0) + (s.outlet?1:0);
   if (s.cup     > MAX_CUP)    { why = "cup max=4"; return false; }
@@ -102,16 +102,119 @@ void applySetting(const Setting& s) {
   if (s.powder) setupPowder(s.powder);
   if (s.outlet) setupOutlet(s.outlet);
   if (s.cooker) setupCooker(s.cooker);
-  current = s;
+  current = s; // 전역 변수 'current'에 적용
 }
 
 void printMappingSummary(const Setting& s) {
-  // (디버깅용 매핑 요약 함수... 생략)
+  // (디버깅용 매핑 요약 함수)
+  // ...
 }
 
-// ===== 'setting' 명령 핸들러 =====
-// [수정] JsonDocument -> JsonObject
-bool handleSettingJson(JsonObject doc) { 
+// =======================================================
+// ===               ★ 제어 함수 (API 2.x)            ===
+// =======================================================
+
+bool handleCupCommand(const JsonDocument& doc) {
+  int control = doc["control"] | 0;
+  const char* func = doc["function"] | "";
+  if (control <= 0 || control > current.cup) { printError("invalid cup control num"); return false; }
+  uint8_t idx = control - 1; 
+
+  if (strcmp(func, "startdispense") == 0) {
+    digitalWrite(CUP_MOTOR_OUT[idx], HIGH); // ON
+    printOk("cup startdispense");
+  } else if (strcmp(func, "stopdispense") == 0) {
+    digitalWrite(CUP_MOTOR_OUT[idx], LOW); // OFF
+    printOk("cup stopdispense");
+  } else { printError("unknown cup function"); }
+  return true;
+}
+
+bool handleRamenCommand(const JsonDocument& doc) {
+  int control = doc["control"] | 0;
+  const char* func = doc["function"] | "";
+  if (control <= 0 || control > current.ramen) { printError("invalid ramen control num"); return false; }
+  uint8_t idx = control - 1;
+  printOk("start handle ramen");
+
+  if (strcmp(func, "startdispense") == 0) {
+    printOk("current index : ", RAMEN_EJ_FWD_OUT[idx]);
+    digitalWrite(RAMEN_EJ_FWD_OUT[idx], HIGH); // ON
+    printOk("ramen startdispense");
+  } else if (strcmp(func, "stopdispense") == 0) {
+    digitalWrite(RAMEN_EJ_FWD_OUT[idx], LOW); // OFF
+    printOk("ramen stopdispense");
+  } else { printError("unknown ramen function"); }
+  return true;
+}
+
+bool handlePowderCommand(const JsonDocument& doc) {
+  int control = doc["control"] | 0;
+  const char* func = doc["function"] | "";
+  if (control <= 0 || control > current.powder) { printError("invalid powder control num"); return false; }
+  uint8_t idx = control - 1;
+
+  if (strcmp(func, "startdispense") == 0) {
+    digitalWrite(POWDER_MOTOR_OUT[idx], HIGH); // ON
+    printOk("powder startdispense");
+  } else if (strcmp(func, "stopdispense") == 0) {
+    digitalWrite(POWDER_MOTOR_OUT[idx], LOW); // OFF
+    printOk("powder stopdispense");
+  } else { printError("unknown powder function"); }
+  return true;
+}
+
+bool handleCookerCommand(const JsonDocument& doc) {
+  int control = doc["control"] | 0;
+  const char* func = doc["function"] | "";
+  if (control <= 0 || control > current.cooker) { printError("invalid cooker control num"); return false; }
+  uint8_t idx = control - 1;
+
+  if (strcmp(func, "startcook") == 0) {
+    int water = doc["water"]; 
+    int timer = doc["timer"]; 
+    if (idx < 2) { // 1, 2번 장비만 출력
+      digitalWrite(COOKER_WTR_SIG[idx], HIGH); // ON
+      digitalWrite(COOKER_IND_SIG[idx], HIGH); // ON
+    }
+    printOk("cooker startcook");
+  } else if (strcmp(func, "stopcook") == 0) {
+    if (idx < 2) {
+      digitalWrite(COOKER_WTR_SIG[idx], LOW); // OFF
+      digitalWrite(COOKER_IND_SIG[idx], LOW); // OFF
+    }
+    printOk("cooker stopcook");
+  } else { printError("unknown cooker function"); }
+  return true;
+}
+
+bool handleOutletCommand(const JsonDocument& doc) {
+  int control = doc["control"] | 0;
+  const char* func = doc["function"] | "";
+  if (control <= 0 || control > current.outlet) { printError("invalid outlet control num"); return false; }
+  uint8_t idx = control - 1;
+
+  if (strcmp(func, "opendoor") == 0) {
+    digitalWrite(OUTLET_FWD_OUT[idx], HIGH); // ON
+    digitalWrite(OUTLET_REV_OUT[idx], LOW);  // OFF
+    printOk("outlet opendoor");
+  } else if (strcmp(func, "closedoor") == 0) {
+    digitalWrite(OUTLET_FWD_OUT[idx], LOW);  // OFF
+    digitalWrite(OUTLET_REV_OUT[idx], HIGH); // ON
+    printOk("outlet closedoor");
+  } else if (strcmp(func, "stopoutlet") == 0) {
+    digitalWrite(OUTLET_FWD_OUT[idx], LOW); // OFF
+    digitalWrite(OUTLET_REV_OUT[idx], LOW); // OFF
+    printOk("outlet stopoutlet");
+  } else { printError("unknown outlet function"); }
+  return true;
+}
+
+// =======================================================
+// ===       ★ 설정 함수 (Setting / Query)            ===
+// =======================================================
+
+bool handleSettingJson(const JsonDocument& doc) {
   Setting next;
   next.cup     = doc["cup"]    | 0;
   next.ramen   = doc["ramen"]  | 0;
@@ -127,67 +230,45 @@ bool handleSettingJson(JsonObject doc) {
 
   applySetting(next);
   printOk("pins configured");
-  // printMappingSummary(next);
+  // printMappingSummary(next); // 디버깅 필요시 주석 해제
   return true;
 }
 
-// ===== [신규] 단일 명령 처리기 =====
-bool processSingleCommand(JsonObject obj) {
-  const char* dev = obj["device"] | "";
-  
+// =======================================================
+// ===            ★ 메인 JSON 파서/분배기             ===
+// =======================================================
+
+bool parseAndDispatch(const char* json) {
+  StaticJsonDocument<512> doc;
+  DeserializationError err = deserializeJson(doc, json);
+  if (err) { printError("json parse fail"); return false; }
+
+  const char* dev = doc["device"] | "";
+
+  // 1. 설정 또는 질의 명령
   if (strcmp(dev, "setting") == 0) {
-    return handleSettingJson(obj);
+    return handleSettingJson(doc);
   } else if (strcmp(dev, "query") == 0) {
     replyCurrentSetting(current);
     return true;
-  } else {
-    // 'setting' / 'query' 외의 명령 (cup, ramen 등)
-    // 요구사항: Echo
-    if (strlen(dev) > 0) {
-        // 객체를 다시 문자열로 직렬화하여 반송
-        serializeJson(obj, Serial);
-        Serial.println();
-        return true;
-    } else {
-        printError("unsupported device field");
-        return false;
-    }
   }
-}
-
-// ===== [수정] 메인 파서 (배열/객체 분기) =====
-bool parseAndDispatch(const char* json) {
-  // JSON 배열 크기에 맞춰 용량 증가
-  StaticJsonDocument<2048> doc; 
   
-  DeserializationError err = deserializeJson(doc, json);
-  if (err) { 
-    printError("json parse fail"); 
-    return false; 
+  // 2. 제어 명령
+  else if (strcmp(dev, "cup") == 0) {
+    return handleCupCommand(doc);
+  } else if (strcmp(dev, "ramen") == 0) {
+    return handleRamenCommand(doc);
+  } else if (strcmp(dev, "powder") == 0) {
+    return handlePowderCommand(doc);
+  } else if (strcmp(dev, "cooker") == 0) {
+    return handleCookerCommand(doc);
+  } else if (strcmp(dev, "outlet") == 0) {
+    return handleOutletCommand(doc);
   }
-
-  // 1. JSON 배열('[{}, {}]')인가?
-  if (doc.is<JsonArray>()) {
-    JsonArray arr = doc.as<JsonArray>();
-    bool all_success = true;
-    
-    // 배열을 순회하며 모든 명령을 개별적으로 처리
-    for (JsonObject obj : arr) {
-      if (!processSingleCommand(obj)) {
-        all_success = false;
-      }
-    }
-    return all_success;
-    
-  } 
-  // 2. 단일 JSON 객체('{}')인가?
-  else if (doc.is<JsonObject>()) {
-    JsonObject obj = doc.as<JsonObject>();
-    return processSingleCommand(obj);
-  } 
-  // 3. 둘 다 아닌 경우
+  
+  // 3. 알 수 없는 명령
   else {
-    printError("root must be object or array");
+    printError("unsupported device field");
     return false;
   }
 }

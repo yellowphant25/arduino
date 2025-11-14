@@ -53,27 +53,27 @@ void loop() {
   }
 
   // 0.1초마다 상태 리포팅
-  unsigned long now = millis();
-  if (now - lastPublishMs >= PUBLISH_INTERVAL_MS) {
-    lastPublishMs = now;
+  // unsigned long now = millis();
+  // if (now - lastPublishMs >= PUBLISH_INTERVAL_MS) {
+  //   lastPublishMs = now;
     
-    // 현재 설정된 장비가 있을 때만 센서 읽기 및 전송
-    if (current.cup > 0 || current.ramen > 0 || current.powder > 0 || current.cooker > 0 || current.outlet > 0) {
-      readAllSensors();     // Reporting.cpp 에 정의됨
-      publishStateJson();   // Reporting.cpp 에 정의됨
-    } else {
-      // setting이 안된 상태에서도 전송
-      state.door_sensor1 = digitalRead(DOOR_SENSOR1_PIN);
-      state.door_sensor2 = digitalRead(DOOR_SENSOR2_PIN);
+  //   // 현재 설정된 장비가 있을 때만 센서 읽기 및 전송
+  //   if (current.cup > 0 || current.ramen > 0 || current.powder > 0 || current.cooker > 0 || current.outlet > 0) {
+  //     readAllSensors();     // Reporting.cpp 에 정의됨
+  //     publishStateJson();   // Reporting.cpp 에 정의됨
+  //   } else {
+  //     // setting이 안된 상태에서도 전송
+  //     state.door_sensor1 = digitalRead(DOOR_SENSOR1_PIN);
+  //     state.door_sensor2 = digitalRead(DOOR_SENSOR2_PIN);
       
-      StaticJsonDocument<128> doorDoc;
-      doorDoc["device"] = "door";
-      doorDoc["sensor1"] = state.door_sensor1;
-      doorDoc["sensor2"] = state.door_sensor2;
-      serializeJson(doorDoc, Serial);
-      Serial.println();
-    }
-  }
+  //     StaticJsonDocument<128> doorDoc;
+  //     doorDoc["device"] = "door";
+  //     doorDoc["sensor1"] = state.door_sensor1;
+  //     doorDoc["sensor2"] = state.door_sensor2;
+  //     serializeJson(doorDoc, Serial);
+  //     Serial.println();
+  //   }
+  // }
 
   // 추가로직 처리
 }
