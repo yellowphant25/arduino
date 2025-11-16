@@ -272,3 +272,17 @@ bool parseAndDispatch(const char* json) {
     return false;
   }
 }
+
+void handleCupDispenser() {
+  if (digitalRead(CUP_MOTOR_OUT[1]) == HIGH) {
+    digitalWrite(CUP_MOTOR_OUT[0], LOW);
+  }
+}
+
+void handleRamenDispenser() {
+  bool isElapsed = cur_encoder - start_encoder > interval;
+
+  if (digitalRead(RAMEN_PRESENT_IN[0]) == HIGH || digitalRead(RAMEN_UP_TOP_IN[0]) == HIGH || isElapsed) {
+    digitalWrite(RAMEN_UP_FWD_OUT[0], LOW);
+  }
+}

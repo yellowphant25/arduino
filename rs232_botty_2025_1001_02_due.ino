@@ -17,6 +17,11 @@ Setting current; // 현재 적용된 '역할' 설정
 State state;     // 모든 센서의 현재 값을 저장
 String rx;       // 시리얼 수신 버퍼
 unsigned long lastPublishMs = 0;
+unsigned long encoder1 = 0;
+
+unsigned long cur_encoder1 = 0;
+unsigned long start_encoder1 = 0;
+unsigned long interval = 1000;
 
 // ==========================
 // ===     기본 스케치    ===
@@ -76,4 +81,6 @@ void loop() {
   // }
 
   // 추가로직 처리
+
+
 }
