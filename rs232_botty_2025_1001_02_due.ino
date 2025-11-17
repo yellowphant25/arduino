@@ -19,13 +19,6 @@ String rx;       // 시리얼 수신 버퍼
 unsigned long lastPublishMs = 0;
 unsigned long encoder1 = 0;
 
-unsigned long cur_encoder1 = 0;
-unsigned long start_encoder1 = 0;
-unsigned long interval = 1000;
-
-// ==========================
-// ===     기본 스케치    ===
-// ==========================
 void setup() {
   Serial.begin(115200);
   while (!Serial) {;}
@@ -79,8 +72,6 @@ void loop() {
   //     Serial.println();
   //   }
   // }
-
-  // 추가로직 처리
 
 
 }

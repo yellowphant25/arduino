@@ -4,18 +4,21 @@
 #include "config.h"    // 핀맵
 #include "state.h"     // 전역 변수(current, state) 사용
 
-// ===== 유틸리티 함수 (응답) =====
-void printError(const char* msg) {
-  Serial.print(F("{\"ok\":false,\"error\":\""));
-  Serial.print(msg);
-  Serial.println(F("\"}"));
-}
+enum RamenEjectState {
+  EJECT_IDLE,
+  EJECTING,
+  EJECT_RETURNING
+};
+RamenEjectState ramenEjectStatus = EJECT_IDLE;
 
-void printOk(const char* what) {
-  Serial.print(F("{\"ok\":true,\"msg\":\""));
-  Serial.print(what);
-  Serial.println(F("\"}"));
-}
+bool isPowderDispensing = false;
+unsigned long powderStartTime = 0;
+const unsigned long POWDER_DISPENSE_TIME_MS = 1000; 
+
+
+volatile long cur_encoder1 = 0;
+unsigned long start_encoder1 = 0;
+unsigned long interval = 1000;
 
 void replyCurrentSetting(const Setting& s) {
   StaticJsonDocument<256> doc;
@@ -117,57 +120,56 @@ void printMappingSummary(const Setting& s) {
 bool handleCupCommand(const JsonDocument& doc) {
   int control = doc["control"] | 0;
   const char* func = doc["function"] | "";
-  if (control <= 0 || control > current.cup) { printError("invalid cup control num"); return false; }
+  if (control <= 0 || control > current.cup) { Serial.println("invalid cup control num"); return false; }
   uint8_t idx = control - 1; 
 
   if (strcmp(func, "startdispense") == 0) {
-    digitalWrite(CUP_MOTOR_OUT[idx], HIGH); // ON
-    printOk("cup startdispense");
+    digitalWrite(CUP_MOTOR_OUT[idx], HIGH);
+    Serial.println("cup startdispense");
   } else if (strcmp(func, "stopdispense") == 0) {
-    digitalWrite(CUP_MOTOR_OUT[idx], LOW); // OFF
-    printOk("cup stopdispense");
-  } else { printError("unknown cup function"); }
+    digitalWrite(CUP_MOTOR_OUT[idx], LOW);
+    Serial.println("cup stopdispense");
+  } else { Serial.println("unknown cup function"); }
   return true;
 }
 
 bool handleRamenCommand(const JsonDocument& doc) {
   int control = doc["control"] | 0;
   const char* func = doc["function"] | "";
-  if (control <= 0 || control > current.ramen) { printError("invalid ramen control num"); return false; }
+  if (control <= 0 || control > current.ramen) { Serial.println("invalid ramen control num"); return false; }
   uint8_t idx = control - 1;
-  printOk("start handle ramen");
+  Serial.println("start handle ramen");
 
   if (strcmp(func, "startdispense") == 0) {
-    printOk("current index : ", RAMEN_EJ_FWD_OUT[idx]);
     digitalWrite(RAMEN_EJ_FWD_OUT[idx], HIGH); // ON
-    printOk("ramen startdispense");
+    Serial.println("ramen startdispense");
   } else if (strcmp(func, "stopdispense") == 0) {
     digitalWrite(RAMEN_EJ_FWD_OUT[idx], LOW); // OFF
-    printOk("ramen stopdispense");
-  } else { printError("unknown ramen function"); }
+    Serial.println("ramen stopdispense");
+  } else { Serial.println("unknown ramen function"); }
   return true;
 }
 
 bool handlePowderCommand(const JsonDocument& doc) {
   int control = doc["control"] | 0;
   const char* func = doc["function"] | "";
-  if (control <= 0 || control > current.powder) { printError("invalid powder control num"); return false; }
+  if (control <= 0 || control > current.powder) { Serial.println("invalid powder control num"); return false; }
   uint8_t idx = control - 1;
 
   if (strcmp(func, "startdispense") == 0) {
     digitalWrite(POWDER_MOTOR_OUT[idx], HIGH); // ON
-    printOk("powder startdispense");
+    Serial.println("powder startdispense");
   } else if (strcmp(func, "stopdispense") == 0) {
     digitalWrite(POWDER_MOTOR_OUT[idx], LOW); // OFF
-    printOk("powder stopdispense");
-  } else { printError("unknown powder function"); }
+    Serial.println("powder stopdispense");
+  } else { Serial.println("unknown powder function"); }
   return true;
 }
 
 bool handleCookerCommand(const JsonDocument& doc) {
   int control = doc["control"] | 0;
   const char* func = doc["function"] | "";
-  if (control <= 0 || control > current.cooker) { printError("invalid cooker control num"); return false; }
+  if (control <= 0 || control > current.cooker) { Serial.println("invalid cooker control num"); return false; }
   uint8_t idx = control - 1;
 
   if (strcmp(func, "startcook") == 0) {
@@ -177,42 +179,38 @@ bool handleCookerCommand(const JsonDocument& doc) {
       digitalWrite(COOKER_WTR_SIG[idx], HIGH); // ON
       digitalWrite(COOKER_IND_SIG[idx], HIGH); // ON
     }
-    printOk("cooker startcook");
+    Serial.println("cooker startcook");
   } else if (strcmp(func, "stopcook") == 0) {
     if (idx < 2) {
       digitalWrite(COOKER_WTR_SIG[idx], LOW); // OFF
       digitalWrite(COOKER_IND_SIG[idx], LOW); // OFF
     }
-    printOk("cooker stopcook");
-  } else { printError("unknown cooker function"); }
+    Serial.println("cooker stopcook");
+  } else { Serial.println("unknown cooker function"); }
   return true;
 }
 
 bool handleOutletCommand(const JsonDocument& doc) {
   int control = doc["control"] | 0;
   const char* func = doc["function"] | "";
-  if (control <= 0 || control > current.outlet) { printError("invalid outlet control num"); return false; }
+  if (control <= 0 || control > current.outlet) { Serial.println("invalid outlet control num"); return false; }
   uint8_t idx = control - 1;
 
   if (strcmp(func, "opendoor") == 0) {
     digitalWrite(OUTLET_FWD_OUT[idx], HIGH); // ON
     digitalWrite(OUTLET_REV_OUT[idx], LOW);  // OFF
-    printOk("outlet opendoor");
+    Serial.println("outlet opendoor");
   } else if (strcmp(func, "closedoor") == 0) {
     digitalWrite(OUTLET_FWD_OUT[idx], LOW);  // OFF
     digitalWrite(OUTLET_REV_OUT[idx], HIGH); // ON
-    printOk("outlet closedoor");
+    Serial.println("outlet closedoor");
   } else if (strcmp(func, "stopoutlet") == 0) {
     digitalWrite(OUTLET_FWD_OUT[idx], LOW); // OFF
     digitalWrite(OUTLET_REV_OUT[idx], LOW); // OFF
-    printOk("outlet stopoutlet");
-  } else { printError("unknown outlet function"); }
+    Serial.println("outlet stopoutlet");
+  } else { Serial.println("unknown outlet function"); }
   return true;
 }
-
-// =======================================================
-// ===       ★ 설정 함수 (Setting / Query)            ===
-// =======================================================
 
 bool handleSettingJson(const JsonDocument& doc) {
   Setting next;
@@ -224,36 +222,30 @@ bool handleSettingJson(const JsonDocument& doc) {
 
   String why;
   if (!validateRules(next, why)) {
-    printError(why.c_str());
+    Serial.println(why.c_str());
     return false;
   }
 
   applySetting(next);
-  printOk("pins configured");
+  Serial.println("pins configured");
   // printMappingSummary(next); // 디버깅 필요시 주석 해제
   return true;
 }
 
-// =======================================================
-// ===            ★ 메인 JSON 파서/분배기             ===
-// =======================================================
-
 bool parseAndDispatch(const char* json) {
   StaticJsonDocument<512> doc;
   DeserializationError err = deserializeJson(doc, json);
-  if (err) { printError("json parse fail"); return false; }
+  if (err) { Serial.println("json parse fail"); return false; }
 
   const char* dev = doc["device"] | "";
 
-  // 1. 설정 또는 질의 명령
   if (strcmp(dev, "setting") == 0) {
     return handleSettingJson(doc);
   } else if (strcmp(dev, "query") == 0) {
     replyCurrentSetting(current);
     return true;
   }
-  
-  // 2. 제어 명령
+
   else if (strcmp(dev, "cup") == 0) {
     return handleCupCommand(doc);
   } else if (strcmp(dev, "ramen") == 0) {
@@ -266,23 +258,220 @@ bool parseAndDispatch(const char* json) {
     return handleOutletCommand(doc);
   }
   
-  // 3. 알 수 없는 명령
   else {
-    printError("unsupported device field");
+    Serial.println("unsupported device field");
     return false;
   }
 }
 
-void handleCupDispenser() {
-  if (digitalRead(CUP_MOTOR_OUT[1]) == HIGH) {
-    digitalWrite(CUP_MOTOR_OUT[0], LOW);
+/**
+ * @brief 용기 배출을 시작
+ * (명령 수신 시 1회 호출)
+ */
+void startCupDispense() {
+  Serial.println("명령: 용기 배출 시작 (Pin 4 HIGH)");
+  digitalWrite(CUP_MOTOR_OUT[0], HIGH);
+}
+
+/**
+ * @brief 용기 배출 멈춤 조건을 확인
+ * (loop()에서 계속 호출)
+ */
+void checkCupDispense() {
+  if (digitalRead(CUP_MOTOR_OUT[0]) == HIGH) {
+    if (digitalRead(CUP_ROT_IN[0]) == HIGH) {
+      Serial.println("완료: 용기 배출 중지 (Pin 4 LOW)");
+      digitalWrite(CUP_MOTOR_OUT[0], LOW);
+    }
   }
 }
 
-void handleRamenDispenser() {
-  bool isElapsed = cur_encoder - start_encoder > interval;
+/**
+ * @brief (2) 면 상승을 시작
+ * (명령 수신 시 1회 호출)
+ */
+void startRamenRise() {
+  Serial.println("명령: 면 상승 시작 (Pin 4 HIGH)");
+  
+  noInterrupts(); // ISR과의 충돌 방지
+  start_encoder1 = cur_encoder1;
+  interrupts();
+  
+  Serial.print("시작 엔코더 값: ");
+  Serial.println(start_encoder1);
+  
+  digitalWrite(RAMEN_UP_FWD_OUT[0], HIGH);
+}
 
-  if (digitalRead(RAMEN_PRESENT_IN[0]) == HIGH || digitalRead(RAMEN_UP_TOP_IN[0]) == HIGH || isElapsed) {
-    digitalWrite(RAMEN_UP_FWD_OUT[0], LOW);
+/**
+ * @brief 면 상승 멈춤 조건 3가지를 확인합니다.
+ * (loop()에서 계속 호출)
+ */
+void checkRamenRise() {
+  if (digitalRead(RAMEN_UP_FWD_OUT[0]) == HIGH) {
+    bool stopMotor = false;
+    
+    if (digitalRead(RAMEN_PRESENT_IN[0]) == HIGH) {
+      Serial.println("완료: 면 감지됨 (Pin 4 LOW)");
+      stopMotor = true;
+    }
+    
+    else if (digitalRead(RAMEN_UP_TOP_IN[0]) == HIGH) {
+      Serial.println("완료: 상승 상한 도달 (Pin 4 LOW)");
+      stopMotor = true;
+    }
+
+    else {
+      long current_encoder_safe;
+      noInterrupts(); 
+      current_encoder_safe = cur_encoder1;
+      interrupts();
+      
+      if (current_encoder_safe - start_encoder1 > interval) {
+        Serial.println("완료: 엔코더 인터벌 도달 (Pin 4 LOW)");
+        stopMotor = true;
+      }
+    }
+
+    if (stopMotor) {
+      digitalWrite(RAMEN_UP_FWD_OUT[0], LOW);
+    }
+  }
+}
+
+/**
+ * @brief (3) 면 하강(초기화)을 시작합니다.
+ * (명령 수신 시 1회 호출)
+ */
+void startRamenInit() {
+  Serial.println("명령: 면 하강 시작 (Pin 5 HIGH)");
+  digitalWrite(RAMEN_UP_REV_OUT[0], HIGH);
+}
+
+/**
+ * @brief 면 하강(초기화) 멈춤 조건을 확인합니다.
+ * (loop()에서 계속 호출)
+ */
+void checkRamenInit() {
+  // 5번 핀이 켜져있을 때만 멈춤 조건을 검사
+  if (digitalRead(RAMEN_UP_REV_OUT[0]) == HIGH) {
+    // 11번 핀 (상승 하한)
+    if (digitalRead(RAMEN_UP_BTM_IN[0]) == HIGH) {
+      Serial.println("완료: 상승 하한 도달 (Pin 5 LOW)");
+      digitalWrite(RAMEN_UP_REV_OUT[0], LOW);
+    }
+  }
+}
+
+
+/**
+ * @brief 면 배출을 시작
+ * (명령 수신 시 1회 호출)
+ */
+void startRamenEject() {
+  // 이미 동작 중이면 무시
+  if (ramenEjectStatus == EJECT_IDLE) {
+    Serial.println("명령: 면 배출 시작 (Pin 6 HIGH)");
+    ramenEjectStatus = EJECTING;
+    digitalWrite(RAMEN_EJ_FWD_OUT[0], HIGH);
+  }
+}
+
+/**
+ * @brief 면 배출 상태 머신을 처리합니다.
+ * (loop()에서 계속 호출)
+ */
+void checkRamenEject() {
+  switch (ramenEjectStatus) {
+    case EJECTING:
+      // 배출 중 (정방향) -> 8번 핀 (배출 상한) 감시
+      if (digitalRead(RAMEN_EJ_TOP_IN[0]) == HIGH) {
+        Serial.println("상태: 배출 상한 도달. 복귀 시작 (Pin 6 LOW, Pin 7 HIGH)");
+        digitalWrite(RAMEN_EJ_FWD_OUT[0], LOW);  // 정방향 정지
+        digitalWrite(RAMEN_EJ_REV_OUT[0], HIGH); // 역방향 시작
+        ramenEjectStatus = EJECT_RETURNING;
+      }
+      break;
+      
+    case EJECT_RETURNING:
+      if (digitalRead(RAMEN_EJ_BTM_IN[0]) == HIGH) {
+        Serial.println("완료: 배출 하한 도달. 작업 종료 (Pin 7 LOW)");
+        digitalWrite(RAMEN_EJ_REV_OUT[0], LOW); // 역방향 정지
+        ramenEjectStatus = EJECT_IDLE;
+      }
+      break;
+      
+    case EJECT_IDLE:
+    default:
+      // 할 일 없음
+      break;
+  }
+}
+
+/**
+ * @brief (5) 스프 배출을 시작합니다. (타이머 시작)
+ * (명령 수신 시 1회 호출)
+ */
+void startPowderDispense() {
+  if (isPowderDispensing == false) {
+    Serial.println("명령: 스프 배출 시작 (Pin 4 HIGH, 1초 타이머)");
+    isPowderDispensing = true;
+    powderStartTime = millis(); // 현재 시간 저장
+    digitalWrite(POWDER_MOTOR_OUT[0], HIGH);
+  }
+}
+
+/**
+ * @brief 스프 배출 타이머를 확인합니다.
+ * (loop()에서 계속 호출)
+ */
+void checkPowderDispense() {
+  if (isPowderDispensing) {
+    // 현재시간 - 시작시간 >= 1000ms (1초)
+    if (millis() - powderStartTime >= POWDER_DISPENSE_TIME_MS) {
+      Serial.println("완료: 1초 경과. 스프 배출 중지 (Pin 4 LOW)");
+      digitalWrite(POWDER_MOTOR_OUT[0], LOW);
+      isPowderDispensing = false;
+    }
+  }
+}
+
+/**
+ * @brief 배출구 오픈
+ * (명령 수신 시 1회 호출)
+ */
+void startOutletOpen() {
+  Serial.println("명령: 배출구 오픈 시작 (Pin 4 HIGH)");
+  digitalWrite(OUTLET_FWD_OUT[0], HIGH);
+}
+
+/**
+ * @brief 배출구 닫기
+ * (명령 수신 시 1회 호출)
+ */
+void startOutletClose() {
+  Serial.println("명령: 배출구 닫기 시작 (Pin 5 HIGH)");
+  digitalWrite(OUTLET_REV_OUT[0], HIGH);
+}
+
+/**
+ * @brief 배출구 오픈/닫힘 멈춤 조건을 확인
+ * (loop()에서 계속 호출)
+ */
+void checkOutlet() {
+  // 오픈 멈춤 조건 (4번 핀이 켜져있을 때 6번 핀 감시)
+  if (digitalRead(OUTLET_FWD_OUT[0]) == HIGH) {
+    if (digitalRead(OUTLET_OPEN_IN[0]) == HIGH) {
+      Serial.println("완료: 배출구 오픈 완료 (Pin 4 LOW)");
+      digitalWrite(OUTLET_FWD_OUT[0], LOW);
+    }
+  }
+
+  // 닫힘 멈춤 조건 (5번 핀이 켜져있을 때 7번 핀 감시)
+  if (digitalRead(OUTLET_REV_OUT[0]) == HIGH) {
+    if (digitalRead(OUTLET_CLOSE_IN[0]) == HIGH) {
+      Serial.println("완료: 배출구 닫힘 완료 (Pin 5 LOW)");
+      digitalWrite(OUTLET_REV_OUT[0], LOW);
+    }
   }
 }
