@@ -44,4 +44,19 @@ struct State {
 extern Setting current;
 extern State state;
 
+// [수정] PPR과 CPR은 const이므로, extern const로 선언합니다.
+extern const int PPR;
+extern const int CPR; 
+
+// [수정] 모든 변수의 extern 선언을 통일합니다.
+extern volatile long encoderCount;
+extern volatile int direction;
+extern unsigned long lastEncoderReportTime; // 52줄 수정됨
+extern long lastCount;
+
+// ===== 엔코더 관련 설정 =====
+// [수정] ENCODER_A/B_PIN은 const이므로, extern const로 선언합니다.
+extern const int ENCODER_A_PIN;
+extern const int ENCODER_B_PIN;
+
 #endif // STATE_H
